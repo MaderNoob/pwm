@@ -14,6 +14,9 @@ impl UnixFileFlags {
     pub fn set_flag(&mut self,flag:UnixFileFlag){
         self.value |= flag as i32
     }
+    pub fn unset_flag(&mut self,flag:UnixFileFlag){
+        self.value &=!(flag as i32);
+    }
 }
 pub trait UnixFile {
     fn get_unix_flags(&self) -> locker::Result<UnixFileFlags>;
