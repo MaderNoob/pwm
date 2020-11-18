@@ -7,9 +7,9 @@ use std::io::{BufReader, Read};
 pub type Sha512Digest = GenericArray<u8, <Sha512 as Digest>::OutputSize>;
 pub const SALT_LENGTH:usize=16;
 pub struct EncryptionHeaders {
-    salted_key_hash: Sha512Digest,
-    nonce: Nonce,
-    salt: [u8;SALT_LENGTH],
+    pub salted_key_hash: Sha512Digest,
+    pub nonce: Nonce,
+    pub salt: [u8;SALT_LENGTH],
 }
 impl EncryptionHeaders {
     fn new() -> EncryptionHeaders {
