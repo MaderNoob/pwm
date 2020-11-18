@@ -31,7 +31,7 @@ impl EncryptionHeaders {
         let mut headers=EncryptionHeaders::new();
         match read_with_io_error(reader,&mut headers){
             Ok(())=>Ok(headers),
-            Err(_)=>Err(Error::FileNotLocked)
+            Err(_)=>Err(Error::FileNotEncryptedProperly)
         }
     }
 }
