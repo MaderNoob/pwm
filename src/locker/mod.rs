@@ -1,5 +1,6 @@
-mod flags;
-mod files;
-mod errors;
-mod encrypt;
-mod headers;
+pub mod flags;
+pub mod files;
+pub mod errors;
+pub mod encrypt;
+pub mod headers;
+mod readers;
