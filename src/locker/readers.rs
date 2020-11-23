@@ -23,4 +23,7 @@ impl VecReader{
     pub fn mut_rest(&mut self)->&mut [u8]{
         &mut self.vector[self.pos..]
     }
+    pub fn buffer(&self)->&[u8]{
+        self.vector
+    }
 }

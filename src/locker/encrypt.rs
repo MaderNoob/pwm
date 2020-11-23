@@ -1,18 +1,20 @@
 use crate::locker::errors::{map_to_locker_error, Error, Result};
-use crate::locker::headers::{EncryptionHeaders, ENCRYPTION_HEADERS_SIZE};
+use crate::locker::headers::{EncryptionHeaders, ENCRYPTION_HEADERS_SIZE, SALT_LENGTH};
 use crate::locker::readers::VecReader;
 use chacha20::{
     cipher::NewStreamCipher, cipher::SyncStreamCipher, cipher::SyncStreamCipherSeek, ChaCha20,
     Nonce,
 };
-use rand::{thread_rng, RngCore,Rng};
+use generic_array::typenum::Unsigned;
+use rand::{thread_rng, Rng, RngCore};
 use sha2::{Digest, Sha256, Sha512};
 use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom};
-type Sha256Digest=generic_array::GenericArray<u8,<Sha256 as Digest>::OutputSize>;
+use std::io::{Read, Seek, SeekFrom, Write};
+
+type Sha256Digest = generic_array::GenericArray<u8, <Sha256 as Digest>::OutputSize>;
 pub struct Encryptor {
     chacha: ChaCha20,
-    hashed_key:Sha256Digest,
+    hashed_key: Sha256Digest,
 }
 impl Encryptor {
     pub fn new<B: AsRef<[u8]>>(key: B, nonce: &Nonce) -> Encryptor {
@@ -21,7 +23,7 @@ impl Encryptor {
         let key = key_hasher.finalize();
         Encryptor {
             chacha: ChaCha20::new(&key, nonce),
-            hashed_key:key,
+            hashed_key: key,
         }
     }
     pub fn apply(&mut self, buf: &mut [u8]) -> Result<()> {
@@ -30,8 +32,8 @@ impl Encryptor {
             Err(_) => Err(Error::EncryptionError),
         }
     }
-    pub fn reset_with_nonce(&mut self,nonce: &Nonce){
-        self.chacha=ChaCha20::new(&self.hashed_key, nonce)
+    pub fn reset_with_nonce(&mut self, nonce: &Nonce) {
+        self.chacha = ChaCha20::new(&self.hashed_key, nonce)
     }
 }
 
@@ -42,9 +44,9 @@ pub struct LockedEncryptedFile {
     hasher: Sha512,
 }
 impl LockedEncryptedFile {
-    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<LockedEncryptedFile> {
+    pub fn open<P: AsRef<std::path::Path>>(path: P,open_options:OpenOptions) -> Result<LockedEncryptedFile> {
         let mut file =
-            map_to_locker_error(OpenOptions::new().read(true).open(path), Error::OpenFile)?;
+            map_to_locker_error(open_options.open(path), Error::OpenFile)?;
 
         // get the file length and create a buffer with the retrieved length
         let file_len = file
@@ -66,6 +68,13 @@ impl LockedEncryptedFile {
             hasher: Sha512::new(),
         })
     }
+    pub fn open_readonly<P: AsRef<std::path::Path>>(path: P) -> Result<LockedEncryptedFile> {
+        LockedEncryptedFile::open(path, OpenOptions::new().read(true))    
+    }
+    pub fn open_write<P: AsRef<std::path::Path>>(path: P) -> Result<LockedEncryptedFile> {
+        LockedEncryptedFile::open(path, OpenOptions::new().read(true).write(true))    
+    }
+    
     pub fn test_key<B: AsRef<[u8]>>(&mut self, key: B) -> bool {
         self.hasher.update(key);
         self.hasher.update(&self.headers.salt);
@@ -112,6 +121,9 @@ impl EncryptedFile {
     pub fn writer(self) -> EncryptedFileWriter {
         EncryptedFileWriter::new(self)
     }
+    pub fn appender(self)->EncryptedFileAppender{
+        EncryptedFileAppender::new(self)
+    }
 }
 pub struct EncryptedFileReader {
     file: EncryptedFile,
@@ -127,38 +139,114 @@ impl EncryptedFileReader {
 pub struct EncryptedFileWriter {
     file: EncryptedFile,
     buffer: Vec<u8>,
-    hasher:Sha512,
 }
 impl EncryptedFileWriter {
-    pub fn new(mut file:EncryptedFile)->EncryptedFileWriter{
+    pub fn new(mut file: EncryptedFile) -> EncryptedFileWriter {
         // regenerate a new random nonce - never reuse the same keystream!!
-        let mut nonce=Nonce::default();
+        let mut nonce = Nonce::default();
         thread_rng().fill_bytes(&mut nonce);
         file.encryptor.reset_with_nonce(&nonce);
-        EncryptedFileWriter{
-            file:file,
-            buffer:Vec::new(),
-            hasher:Sha512::new(),
+        EncryptedFileWriter {
+            file: file,
+            buffer: Vec::new(),
         }
     }
     pub fn write_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
         // update the hmac hasher
-        self.hasher.update(buf);
+        self.file.hasher.update(buf);
 
         // add the bytes to the buffer
         self.buffer.extend(buf);
 
-        // decrypt the new bytes
-        self.file.encryptor.apply(&mut self.buffer[self.buffer.len()-buf.len()..])?;
+        // encrypt the new bytes
+        self.file
+            .encryptor
+            .apply(&mut self.buffer[self.buffer.len() - buf.len()..])?;
         Ok(self)
     }
-    pub fn flush(self)->Result<()>{
-        self.file.headers.resalt(&self.file.key);
+    fn seek_file(&mut self, pos: u64) -> Result<u64> {
+        map_to_locker_error(self.file.file.seek(SeekFrom::Start(pos)), Error::SeekFile)
+    }
+    fn write_file(&mut self, buf: &[u8]) -> Result<()> {
+        map_to_locker_error(self.file.file.write_all(buf), Error::WriteFile)
+    }
+    pub fn flush(self) -> Result<()> {
+        self.file
+            .headers
+            .hmac
+            .as_ref()
+            .copy_from_slice(&self.file.hasher.finalize_reset());
 
-        fn rewrite_salt_and_hash_with_io_error(writer:&mut EncryptedFileWriter)->std::io::Result<()>{
-            self.file.file.seek(SeekFrom::Start(0))?;
+        // rewrite the hmac
+        self.seek_file(0)?;
+        self.write_file(&self.file.headers.hmac)?;
 
+        // write the new content
+        self.seek_file(ENCRYPTION_HEADERS_SIZE)?;
+        self.write_all(&self.buffer)?;
+
+        // if the length of the original content of the file (without the headers - thus rest),
+        // is bigger then the new content's length
+        if self.file.reader.rest().len() > self.buffer.len() {
+            map_to_locker_error(
+                self.file.file.set_len(ENCRYPTION_HEADERS_SIZE),
+                Error::TruncateFile,
+            )?;
         }
-        
+        Ok(())
+    }
+}
+pub struct EncryptedFileAppender{
+    file:EncryptedFile,
+    buffer:Vec<u8>,
+}
+impl EncryptedFileAppender{
+    pub fn new(mut file: EncryptedFile) -> EncryptedFileAppender {
+        // regenerate a new random nonce - never reuse the same keystream!!
+        let mut nonce = Nonce::default();
+        thread_rng().fill_bytes(&mut nonce);
+        file.encryptor.reset_with_nonce(&nonce);
+
+        // update the hmac hasher with the original content of the file, 
+        // and then re-update it everytime we append to get the full hmac
+        file.hasher.update(file.reader.rest());
+        EncryptedFileAppender {
+            file: file,
+            buffer: Vec::new(),
+        }
+    }
+    pub fn append_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
+        // update the hmac hasher
+        self.file.hasher.update(buf);
+
+        // add the bytes to the buffer
+        self.buffer.extend(buf);
+
+        // encrypt the new bytes
+        self.file
+            .encryptor
+            .apply(&mut self.buffer[self.buffer.len() - buf.len()..])?;
+        Ok(self)
+    }
+    pub fn flush(self) -> Result<()> {
+        self.file
+            .headers
+            .hmac
+            .as_ref()
+            .copy_from_slice(&self.file.hasher.finalize_reset());
+
+        // rewrite the hmac
+        self.seek_file(0)?;
+        self.write_file(&self.file.headers.hmac)?;
+
+
+        //  === write the new content ===
+
+        // seek to the end of the file
+        self.seek_file(self.file.reader.buffer().len())?;
+        // write the appended content
+        self.write_all(&self.buffer)?;
+
+        Ok(())
     }
 }

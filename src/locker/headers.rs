@@ -23,9 +23,9 @@ pub struct EncryptionHeaders {
 impl EncryptionHeaders {
     fn new() -> EncryptionHeaders {
         EncryptionHeaders {
+            hmac:Sha512Digest::default(),
             salt: [0u8;SALT_LENGTH],
             salted_key_hash: Sha512Digest::default(),
-            hmac:Sha512Digest::default(),
             nonce: Nonce::default(),
         }
     }
@@ -33,13 +33,13 @@ impl EncryptionHeaders {
        ENCRYPTION_HEADERS_SIZE
     }
     pub fn read(reader:&mut VecReader) -> Result<EncryptionHeaders> {
-            fn read_with_unit_error(
-                reader: &mut VecReader,
-                headers: &mut EncryptionHeaders,
-            ) -> std::result::Result<(),()> {
+        fn read_with_unit_error(
+            reader: &mut VecReader,
+            headers: &mut EncryptionHeaders,
+        ) -> std::result::Result<(),()> {
+            reader.read_exact(&mut headers.hmac)?;
             reader.read_exact(&mut headers.salt)?;
             reader.read_exact(&mut headers.salted_key_hash)?;
-            reader.read_exact(&mut headers.hmac)?;
             reader.read_exact(&mut headers.nonce)
         }
         let mut headers=EncryptionHeaders::new();
@@ -47,12 +47,5 @@ impl EncryptionHeaders {
             Ok(())=>Ok(headers),
             Err(())=>Err(Error::FileNotEncryptedProperly)
         }
-    }
-    pub fn resalt<B:AsRef<[u8]>>(&mut self,key:B){
-        let mut hasher=Sha512::new();
-        thread_rng().fill_bytes(&mut self.salt);
-        hasher.update(key);
-        hasher.update(&self.salt);
-        self.salted_key_hash.as_ref().copy_from_slice(&hasher.finalize());
     }
 }

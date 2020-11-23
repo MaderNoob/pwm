@@ -4,6 +4,7 @@ pub enum Error{
     ReadFile,
     WriteFile,
     SeekFile,
+    TruncateFile,
     FileGetFlags,
     FileSetFlags,
     FileNotEncryptedProperly,
