@@ -1,6 +1,6 @@
 use crate::locker::errors::{map_to_locker_error, Error, Result};
 use crate::locker::headers::{EncryptionHeaders, ENCRYPTION_HEADERS_SIZE, SALT_LENGTH};
-use crate::locker::readers::VecReader;
+use crate::locker::vec_reader::VecReader;
 use chacha20::{
     cipher::NewStreamCipher, cipher::SyncStreamCipher, cipher::SyncStreamCipherSeek, ChaCha20,
     Nonce,

@@ -1,5 +1,5 @@
 use crate::locker::errors::{Error, Result,map_to_locker_error};
-use crate::locker::readers::VecReader;
+use crate::locker::vec_reader::VecReader;
 use chacha20::{ChaCha20,Nonce,cipher::NewStreamCipher};
 use generic_array::GenericArray;
 use sha2::{Digest, Sha512};
