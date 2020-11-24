@@ -22,7 +22,7 @@ pub trait UnixFile {
     fn get_unix_flags(&self) -> Result<UnixFileFlags>;
     fn set_unix_flags(&self, new_flags: UnixFileFlags) -> Result<()>;
 }
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 impl UnixFile for fs::File {
     fn get_unix_flags(&self) -> Result<UnixFileFlags> {
         let mut flags = 0;
@@ -47,6 +47,31 @@ impl UnixFile for fs::File {
             } else {
                 Ok(())
             }
+        }
+    }
+}
+pub trait MutableFile{
+    fn make_mutable(&mut self)->Result<()>;
+    fn make_immutable(&mut self)->Result<()>;
+}
+impl<T> MutableFile for T
+where T:UnixFile{
+    fn make_mutable(&mut self) ->Result<()> {
+        let mut flags=self.get_unix_flags()?;
+        if flags.is_flag_set(UnixFileFlag::Immutable){
+            flags.unset_flag(UnixFileFlag::Immutable);
+            self.set_unix_flags(flags)
+        }else{
+            Ok(())
+        }
+    }
+    fn make_immutable(&mut self) ->Result<()> {
+        let mut flags=self.get_unix_flags()?;
+        if !flags.is_flag_set(UnixFileFlag::Immutable){
+            flags.set_flag(UnixFileFlag::Immutable);
+            self.set_unix_flags(flags)
+        }else{
+            Ok(())
         }
     }
 }

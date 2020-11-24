@@ -20,10 +20,10 @@ impl VecReader{
     pub fn rest(&self)->&[u8]{
         &self.vector[self.pos..]
     }
-    pub fn mut_rest(&mut self)->&mut [u8]{
+    pub fn rest_mut(&mut self)->&mut [u8]{
         &mut self.vector[self.pos..]
     }
     pub fn buffer(&self)->&[u8]{
-        self.vector
+        &self.vector
     }
 }

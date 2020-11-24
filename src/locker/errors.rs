@@ -13,7 +13,6 @@ pub enum Error{
     MacError,
     WrongPassword,
     EncryptionError,
-    DecryptionError,
 }
 pub type Result<T> = std::result::Result<T,Error>;
 pub fn map_to_locker_error<T,E>(result:std::result::Result<T,E>,locker_error:Error)->Result<T>
