@@ -1,9 +1,12 @@
 mod locker;
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Read,BufRead};
+use std::io::Write;
 
-use locker::encrypt::Encryptor;
+use locker::encrypt::{EncryptedFile, Encryptor, LockedEncryptedFile};
 fn main() {
-   locker::lock("sfasfsaf","suka noob", true);
-   let x=5;
+   //  locker::lock("test.txt","suka noob", false).unwrap();
+    let mut file = LockedEncryptedFile::open_write("test.txt")
+        .unwrap()
+        .unlock("suka noob")
+        .unwrap();
 }

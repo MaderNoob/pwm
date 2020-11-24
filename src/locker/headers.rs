@@ -17,9 +17,9 @@ pub const ENCRYPTION_HEADERS_SIZE:usize=
     SHA_512_DIGEST_SIZE*2 + // salted key hash and hmac
     CHACHA20_NONCE_SIZE; // nonce
 pub struct EncryptionHeaders {
+    pub hmac:Sha512Digest,
     pub salt: [u8;SALT_LENGTH],
     pub salted_key_hash: Sha512Digest,
-    pub hmac:Sha512Digest,
     pub nonce: Nonce,
 }
 impl EncryptionHeaders {
@@ -35,8 +35,13 @@ impl EncryptionHeaders {
         result.hmac.as_mut().copy_from_slice(&hasher.finalize_reset());
 
         hasher.update(key.as_ref());
+        println!("updated hasher with key: {:?}",key.as_ref());
         hasher.update(result.salt);
-        result.salted_key_hash.as_mut().copy_from_slice(&hasher.finalize_reset());
+        println!("updated hasher with salt: {:?}",result.salt);
+        let hash=hasher.finalize_reset();
+        println!("hash: {:?}",hash);
+        result.salted_key_hash.as_mut().copy_from_slice(&hash);
+        // result.salted_key_hash.as_mut().copy_from_slice(&hasher.finalize_reset());
 
         thread_random.fill_bytes(&mut result.nonce);
 
@@ -63,12 +68,15 @@ impl EncryptionHeaders {
     }
     pub fn write_to(&self,buf:&mut [u8]){
         let mut current_index=0;
-        buf.copy_from_slice(&self.salt);
+        buf[..SHA_512_DIGEST_SIZE].copy_from_slice(&self.hmac);
+        current_index+=SHA_512_DIGEST_SIZE;
+
+        buf[current_index..current_index+SALT_LENGTH].copy_from_slice(&self.salt);
         current_index+=SALT_LENGTH;
+
         buf[current_index..current_index+SHA_512_DIGEST_SIZE].copy_from_slice(&self.salted_key_hash);
         current_index+=SHA_512_DIGEST_SIZE;
-        buf[current_index..current_index+SHA_512_DIGEST_SIZE].copy_from_slice(&self.hmac);
-        current_index+=SHA_512_DIGEST_SIZE;
+
         buf[current_index..current_index+CHACHA20_NONCE_SIZE].copy_from_slice(&self.nonce);
     }
 }

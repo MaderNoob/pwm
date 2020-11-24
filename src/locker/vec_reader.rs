@@ -12,6 +12,7 @@ impl VecReader{
     pub fn read_exact(&mut self,buf:&mut [u8])->Result<(),()>{
         if self.pos+buf.len()<=self.vector.len(){
             buf.copy_from_slice(&self.vector[self.pos..self.pos+buf.len()]);
+            self.pos+=buf.len();
             Ok(())
         }else{
             Err(())

@@ -19,6 +19,9 @@ pub fn map_to_locker_error<T,E>(result:std::result::Result<T,E>,locker_error:Err
 where E:std::fmt::Debug{
     match result{
         Ok(v)=>Ok(v),
-        Err(_)=>Err(locker_error),
+        Err(e)=>{
+            println!("error: {:?}",e);
+            Err(locker_error)
+        },
     }
 }

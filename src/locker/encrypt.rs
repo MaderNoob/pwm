@@ -90,10 +90,16 @@ impl LockedEncryptedFile {
     }
 
     pub fn test_key<B: AsRef<[u8]>>(&mut self, key: B) -> bool {
-        self.hasher.update(key);
+        self.hasher.update(&key);
+        println!("updated hasher with key: {:?}",key.as_ref());
         self.hasher.update(&self.headers.salt);
-
-        self.hasher.finalize_reset() == self.headers.salted_key_hash
+        println!("updated hasher with salt: {:?}",&self.headers.salt);
+        
+        let hash=self.hasher.finalize_reset();
+        println!("hash: {:?}",hash);
+        println!("desired hash: {:?}",self.headers.salted_key_hash);
+        hash == self.headers.salted_key_hash
+        // self.hasher.finalize_reset() == self.headers.salted_key_hash
     }
     pub fn unlock<B: AsRef<[u8]>>(mut self, key: B) -> Result<EncryptedFile> {
         if !self.test_key(key.as_ref()) {
@@ -147,6 +153,9 @@ impl EncryptedFile {
         let mut content = Vec::with_capacity(file_len);
 
         map_to_locker_error(file.read_to_end(&mut content), Error::ReadFile)?;
+
+        // seek back to the start of the file for later write calls
+        map_to_locker_error(file.seek(SeekFrom::Start(0)),Error::SeekFile)?;
 
         let mut hasher = Sha512::new();
         let headers = EncryptionHeaders::new(&mut hasher, &content, key.as_ref());
