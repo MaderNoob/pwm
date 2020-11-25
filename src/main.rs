@@ -1,5 +1,6 @@
 mod locker;
 mod commands;
+mod styles;
 mod input;
 use std::fs::{File, OpenOptions};
 use std::io::Write;

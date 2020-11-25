@@ -1,4 +1,4 @@
-use crate::commands::styles::{error_style, success_style};
+use crate::styles::{error_style, success_style};
 use crate::input::prompt_user_to_unlock_file_with_password;
 use crate::locker::encrypt::{LockedEncryptedFile};
 use crate::locker::errors::{print_error, Result};
