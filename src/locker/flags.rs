@@ -1,5 +1,5 @@
 use std::fs;
-use crate::locker::errors::{Result,Error};
+use crate::locker::errors::{Result,ErrorKind};
 
 pub enum UnixFileFlag {
     Immutable = 0x10,
@@ -30,7 +30,7 @@ impl UnixFile for fs::File {
         unsafe {
             use std::os::unix::io::AsRawFd;
             if libc::ioctl(self.as_raw_fd(), 2148034049, flags_ptr) < 0 {
-                Err(Error::FileGetFlags)
+                Err(ErrorKind::FileGetFlags.without_source_error())
             } else {
                 Ok(UnixFileFlags{
                     value:flags
@@ -43,7 +43,7 @@ impl UnixFile for fs::File {
         unsafe {
             use std::os::unix::io::AsRawFd;
             if libc::ioctl(self.as_raw_fd(), 1074292226, flags_ptr) < 0 {
-                Err(Error::FileSetFlags)
+                Err(ErrorKind::FileSetFlags.without_source_error())
             } else {
                 Ok(())
             }

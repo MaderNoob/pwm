@@ -1,4 +1,4 @@
-use crate::locker::errors::{Error, Result,map_to_locker_error};
+use crate::locker::errors::{ErrorKind, Result,io_to_locker_error};
 use crate::locker::vec_reader::VecReader;
 use chacha20::{ChaCha20,Nonce,cipher::NewStreamCipher};
 use generic_array::GenericArray;
@@ -35,13 +35,8 @@ impl EncryptionHeaders {
         result.hmac.as_mut().copy_from_slice(&hasher.finalize_reset());
 
         hasher.update(key.as_ref());
-        println!("updated hasher with key: {:?}",key.as_ref());
         hasher.update(result.salt);
-        println!("updated hasher with salt: {:?}",result.salt);
-        let hash=hasher.finalize_reset();
-        println!("hash: {:?}",hash);
-        result.salted_key_hash.as_mut().copy_from_slice(&hash);
-        // result.salted_key_hash.as_mut().copy_from_slice(&hasher.finalize_reset());
+        result.salted_key_hash.as_mut().copy_from_slice(&hasher.finalize_reset());
 
         thread_random.fill_bytes(&mut result.nonce);
 
@@ -63,7 +58,7 @@ impl EncryptionHeaders {
         let mut headers=EncryptionHeaders::default();
         match read_with_unit_error(reader,&mut headers){
             Ok(())=>Ok(headers),
-            Err(())=>Err(Error::FileNotEncryptedProperly)
+            Err(())=>Err(ErrorKind::FileNotEncryptedProperly.without_source_error())
         }
     }
     pub fn write_to(&self,buf:&mut [u8]){

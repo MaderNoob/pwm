@@ -1,5 +1,5 @@
-use crate::locker::errors::{map_to_locker_error, Error, Result};
-use crate::locker::flags::{MutableFile,UnixFile,UnixFileFlags};
+use crate::locker::errors::{io_to_locker_error, to_locker_error, ErrorKind, Result};
+use crate::locker::flags::{MutableFile, UnixFile, UnixFileFlags};
 use crate::locker::headers::{EncryptionHeaders, ENCRYPTION_HEADERS_SIZE};
 use crate::locker::vec_reader::VecReader;
 use chacha20::{
@@ -30,11 +30,11 @@ impl Encryptor {
     pub fn apply(&mut self, buf: &mut [u8]) -> Result<()> {
         match self.chacha.try_apply_keystream(buf) {
             Ok(_) => Ok(()),
-            Err(_) => Err(Error::EncryptionError),
+            Err(_) => Err(ErrorKind::EncryptionError.without_source_error()),
         }
     }
     pub fn seek(&mut self, pos: u64) -> Result<()> {
-        map_to_locker_error(self.chacha.try_seek(pos), Error::EncryptionError)
+        to_locker_error(self.chacha.try_seek(pos), ErrorKind::EncryptionError)
     }
     pub fn reset_with_nonce(&mut self, nonce: &Nonce) {
         self.chacha = ChaCha20::new(&self.hashed_key, nonce)
@@ -60,7 +60,7 @@ impl LockedEncryptedFile {
         path: P,
         open_options: &OpenOptions,
     ) -> Result<LockedEncryptedFile> {
-        let mut file = map_to_locker_error(open_options.open(path), Error::OpenFile)?;
+        let mut file = io_to_locker_error(open_options.open(path), ErrorKind::OpenFile)?;
 
         // get the file length and create a buffer with the retrieved length
         let file_len = file
@@ -70,7 +70,7 @@ impl LockedEncryptedFile {
         let mut content = Vec::with_capacity(file_len);
 
         // read the whole file into the buffer
-        map_to_locker_error(file.read_to_end(&mut content), Error::ReadFile)?;
+        io_to_locker_error(file.read_to_end(&mut content), ErrorKind::ReadFile)?;
 
         // create a reader over the content vector
         let mut reader = VecReader::new(content);
@@ -91,39 +91,29 @@ impl LockedEncryptedFile {
 
     pub fn test_key<B: AsRef<[u8]>>(&mut self, key: B) -> bool {
         self.hasher.update(&key);
-        println!("updated hasher with key: {:?}",key.as_ref());
         self.hasher.update(&self.headers.salt);
-        println!("updated hasher with salt: {:?}",&self.headers.salt);
-        
-        let hash=self.hasher.finalize_reset();
-        println!("hash: {:?}",hash);
-        println!("desired hash: {:?}",self.headers.salted_key_hash);
-        hash == self.headers.salted_key_hash
-        // self.hasher.finalize_reset() == self.headers.salted_key_hash
+
+        self.hasher.finalize_reset() == self.headers.salted_key_hash
     }
     pub fn unlock<B: AsRef<[u8]>>(mut self, key: B) -> Result<EncryptedFile> {
-        if !self.test_key(key.as_ref()) {
-            Err(Error::WrongPassword)
-        } else {
-            let mut encryptor = Encryptor::new(key.as_ref(), &self.headers.nonce);
-            // decrypt the content
-            encryptor.apply(self.reader.rest_mut())?;
+        let mut encryptor = Encryptor::new(key.as_ref(), &self.headers.nonce);
+        // decrypt the content
+        encryptor.apply(self.reader.rest_mut())?;
 
-            // validate the hmac
-            self.hasher.update(self.reader.rest());
-            if self.hasher.finalize_reset() != self.headers.hmac {
-                return Err(Error::MacError);
-            }
-
-            Ok(EncryptedFile {
-                file: self.file,
-                reader: self.reader,
-                encryptor,
-                headers: self.headers,
-                hasher: self.hasher,
-                key: Vec::from(key.as_ref()),
-            })
+        // validate the hmac
+        self.hasher.update(self.reader.rest());
+        if self.hasher.finalize_reset() != self.headers.hmac {
+            return Err(ErrorKind::MacError.without_source_error());
         }
+
+        Ok(EncryptedFile {
+            file: self.file,
+            reader: self.reader,
+            encryptor,
+            headers: self.headers,
+            hasher: self.hasher,
+            key: Vec::from(key.as_ref()),
+        })
     }
 }
 pub struct EncryptedFile {
@@ -139,9 +129,9 @@ impl EncryptedFile {
         path: P,
         key: B,
     ) -> Result<File> {
-        let mut file = map_to_locker_error(
+        let mut file = io_to_locker_error(
             OpenOptions::new().read(true).write(true).open(path),
-            Error::OpenFile,
+            ErrorKind::OpenFile,
         )?;
         make_mutable_if_immutable(&mut file)?;
 
@@ -152,36 +142,47 @@ impl EncryptedFile {
             .unwrap_or(0);
         let mut content = Vec::with_capacity(file_len);
 
-        map_to_locker_error(file.read_to_end(&mut content), Error::ReadFile)?;
+        io_to_locker_error(file.read_to_end(&mut content), ErrorKind::ReadFile)?;
 
         // seek back to the start of the file for later write calls
-        map_to_locker_error(file.seek(SeekFrom::Start(0)),Error::SeekFile)?;
+        io_to_locker_error(file.seek(SeekFrom::Start(0)), ErrorKind::SeekFile)?;
 
         let mut hasher = Sha512::new();
         let headers = EncryptionHeaders::new(&mut hasher, &content, key.as_ref());
         let mut headers_buf = [0u8; ENCRYPTION_HEADERS_SIZE];
         headers.write_to(&mut headers_buf);
-        map_to_locker_error(file.write_all(&headers_buf), Error::WriteFile)?;
+        io_to_locker_error(file.write_all(&headers_buf), ErrorKind::WriteFile)?;
 
         // encrypt the content buffer
         let mut encryptor = Encryptor::new(key.as_ref(), &headers.nonce);
         encryptor.apply(&mut content)?;
 
         // write the encrypted content
-        map_to_locker_error(file.write_all(&content), Error::WriteFile)?;
-
-        Ok(file)
+        match file.write_all(&content) {
+            Ok(()) => Ok(file),
+            Err(e) => {
+                // if failed to write the content, rewrite the original content
+                // that was overwritten when writing the headers to the file
+                file.write_all(&content[..ENCRYPTION_HEADERS_SIZE]);
+                Err(ErrorKind::RevertToBackup.with_source_error(e))
+            }
+        }
     }
     pub fn decrypt(mut self) -> Result<()> {
         // right now the file cursor is at the end of the file because we called read_to_end,
-        // so seek to the start of the content which is the end of the headers
-        map_to_locker_error(
-            self.file
-                .seek(SeekFrom::Start(ENCRYPTION_HEADERS_SIZE as u64)),
-            Error::SeekFile,
-        )?;
+        // so seek to the start of the file to write the decrypted content
+        io_to_locker_error(self.file.seek(SeekFrom::Start(0)), ErrorKind::SeekFile)?;
         // write all the decrypted content to the file
-        map_to_locker_error(self.file.write_all(self.reader.rest()),Error::WriteFile)
+        io_to_locker_error(
+            self.file.write_all(self.reader.rest()),
+            ErrorKind::WriteFile,
+        )?;
+
+        // truncate the rest of the file
+        io_to_locker_error(
+            self.file.set_len(self.reader.rest().len() as u64),
+            ErrorKind::TruncateFile,
+        )
     }
     pub fn reader(self) -> EncryptedFileReader {
         EncryptedFileReader { file: self }
@@ -200,7 +201,7 @@ impl EncryptedFileReader {
     pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         match self.file.reader.read_exact(buf) {
             Ok(_) => Ok(()),
-            Err(_) => Err(Error::ReadFile),
+            Err(e) => Err(ErrorKind::ReadFile.without_source_error()),
         }
     }
 }
@@ -234,16 +235,19 @@ impl EncryptedFileWriter {
         Ok(self)
     }
     fn seek_file(&mut self, pos: u64) -> Result<u64> {
-        map_to_locker_error(self.file.file.seek(SeekFrom::Start(pos)), Error::SeekFile)
+        io_to_locker_error(
+            self.file.file.seek(SeekFrom::Start(pos)),
+            ErrorKind::SeekFile,
+        )
     }
     fn write_hmac(&mut self) -> Result<()> {
-        map_to_locker_error(
+        io_to_locker_error(
             self.file.file.write_all(&self.file.headers.hmac),
-            Error::WriteFile,
+            ErrorKind::WriteFile,
         )
     }
     fn write_buffer(&mut self) -> Result<()> {
-        map_to_locker_error(self.file.file.write_all(&self.buffer), Error::WriteFile)
+        io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
     }
     pub fn flush(mut self) -> Result<()> {
         self.file
@@ -263,9 +267,9 @@ impl EncryptedFileWriter {
         // if the length of the original content of the file (without the headers - thus rest),
         // is bigger then the new content's length
         if self.file.reader.rest().len() > self.buffer.len() {
-            map_to_locker_error(
+            io_to_locker_error(
                 self.file.file.set_len(ENCRYPTION_HEADERS_SIZE as u64),
-                Error::TruncateFile,
+                ErrorKind::TruncateFile,
             )?;
         }
         Ok(())
@@ -291,16 +295,19 @@ impl EncryptedFileAppender {
         }
     }
     fn seek_file(&mut self, pos: u64) -> Result<u64> {
-        map_to_locker_error(self.file.file.seek(SeekFrom::Start(pos)), Error::SeekFile)
+        io_to_locker_error(
+            self.file.file.seek(SeekFrom::Start(pos)),
+            ErrorKind::SeekFile,
+        )
     }
     fn write_hmac(&mut self) -> Result<()> {
-        map_to_locker_error(
+        io_to_locker_error(
             self.file.file.write_all(&self.file.headers.hmac),
-            Error::WriteFile,
+            ErrorKind::WriteFile,
         )
     }
     fn write_buffer(&mut self) -> Result<()> {
-        map_to_locker_error(self.file.file.write_all(&self.buffer), Error::WriteFile)
+        io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
     }
     pub fn append_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
         // update the hmac hasher
