@@ -1,3 +1,5 @@
+pub mod inner_files;
+
 use crate::locker::errors::{io_to_locker_error, to_locker_error, ErrorKind, Result};
 use crate::locker::flags::{MutableFile, UnixFile, UnixFileFlags};
 use crate::locker::headers::{EncryptionHeaders, ENCRYPTION_HEADERS_SIZE};
@@ -126,10 +128,40 @@ pub struct EncryptedFile {
     encryptor: Encryptor,
 }
 impl EncryptedFile {
+    pub fn create<P: AsRef<std::path::Path>, B: AsRef<[u8]>>(
+        path: P,
+        key: B,
+    ) -> Result<EncryptedFile> {
+        let mut file = io_to_locker_error(
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(path),
+            ErrorKind::OpenFile,
+        )?;
+
+        let mut hasher = Sha512::new();
+        let content = Vec::new();
+        let headers = EncryptionHeaders::new(&mut hasher, &content, key.as_ref());
+        let mut headers_buf = [0u8; ENCRYPTION_HEADERS_SIZE];
+        headers.write_to(&mut headers_buf);
+        io_to_locker_error(file.write_all(&headers_buf), ErrorKind::WriteFile)?;
+
+        // encrypt the content buffer
+        Ok(EncryptedFile {
+            encryptor: Encryptor::new(key.as_ref(), &headers.nonce),
+            key: Vec::from(key.as_ref()),
+            reader: VecReader::new(content),
+            file,
+            headers,
+            hasher,
+        })
+    }
     pub fn encrypt_file<P: AsRef<std::path::Path>, B: AsRef<[u8]>>(
         path: P,
         key: B,
-    ) -> Result<File> {
+    ) -> Result<EncryptedFile> {
         let mut file = io_to_locker_error(
             OpenOptions::new().read(true).write(true).open(path),
             ErrorKind::OpenFile,
@@ -160,12 +192,18 @@ impl EncryptedFile {
 
         // write the encrypted content
         match file.write_all(&content) {
-            Ok(()) => Ok(file),
-            Err(e) => {
+            Ok(()) => Ok(EncryptedFile{
+                key:Vec::from(key.as_ref()),
+                reader:VecReader::new(content),
+                file,headers,hasher,encryptor,
+            }),
+            Err(err) => {
                 // if failed to write the content, rewrite the original content
                 // that was overwritten when writing the headers to the file
-                let _ = file.write_all(&content[..ENCRYPTION_HEADERS_SIZE]);
-                Err(ErrorKind::RevertToBackup.with_source_error(e))
+                match file.write_all(&content[..ENCRYPTION_HEADERS_SIZE]) {
+                    Ok(()) => Err(ErrorKind::WriteFile.with_source_error(err)),
+                    Err(backup_err) => Err(ErrorKind::RevertToBackup.with_source_error(backup_err)),
+                }
             }
         }
     }
@@ -185,20 +223,21 @@ impl EncryptedFile {
             ErrorKind::TruncateFile,
         )
     }
-    pub fn reader(self) -> EncryptedFileReader {
+    pub fn reader(&mut self) -> EncryptedFileReader {
         EncryptedFileReader { file: self }
     }
-    pub fn writer(self) -> EncryptedFileWriter {
+    pub fn writer(&'_ mut self) -> EncryptedFileWriter<'_> {
         EncryptedFileWriter::new(self)
     }
-    pub fn appender(self) -> EncryptedFileAppender {
+    pub fn appender(&'_ mut self) -> EncryptedFileAppender<'_> {
         EncryptedFileAppender::new(self)
     }
 }
-pub struct EncryptedFileReader {
-    file: EncryptedFile,
+
+pub struct EncryptedFileReader<'a> {
+    file: &'a mut EncryptedFile,
 }
-impl crate::locker::io::Read for EncryptedFileReader {
+impl<'a> crate::locker::io::Read for EncryptedFileReader<'a> {
     fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         match self.file.reader.read_exact(buf) {
             Ok(_) => Ok(()),
@@ -222,12 +261,12 @@ impl crate::locker::io::Read for EncryptedFileReader {
     }
 }
 
-pub struct EncryptedFileWriter {
-    file: EncryptedFile,
+pub struct EncryptedFileWriter<'a> {
+    file: &'a mut EncryptedFile,
     buffer: Vec<u8>,
 }
-impl EncryptedFileWriter {
-    pub fn new(mut file: EncryptedFile) -> EncryptedFileWriter {
+impl<'a> EncryptedFileWriter<'a> {
+    pub fn new(file: &'a mut EncryptedFile) -> EncryptedFileWriter<'a> {
         // regenerate a new random nonce - never reuse the same keystream!!
         thread_rng().fill_bytes(&mut file.headers.nonce);
         file.encryptor.reset_with_nonce(&file.headers.nonce);
@@ -249,14 +288,14 @@ impl EncryptedFileWriter {
         )?;
         io_to_locker_error(
             self.file.file.write_all(&self.file.headers.nonce),
-            ErrorKind::WriteFile
+            ErrorKind::WriteFile,
         )
     }
     fn write_buffer(&mut self) -> Result<()> {
         io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
     }
 }
-impl crate::locker::io::Write for EncryptedFileWriter {
+impl<'a> crate::locker::io::Write for EncryptedFileWriter<'a> {
     fn write(&mut self, byte: u8) -> Result<&mut Self> {
         // update the hmac hasher
         self.file.hasher.update(&[byte]);
@@ -311,12 +350,12 @@ impl crate::locker::io::Write for EncryptedFileWriter {
     }
 }
 
-pub struct EncryptedFileAppender {
-    file: EncryptedFile,
+pub struct EncryptedFileAppender<'a> {
+    file: &'a mut EncryptedFile,
     buffer: Vec<u8>,
 }
-impl EncryptedFileAppender {
-    pub fn new(mut file: EncryptedFile) -> EncryptedFileAppender {
+impl<'a> EncryptedFileAppender<'a> {
+    pub fn new(file: &'a mut EncryptedFile) -> EncryptedFileAppender<'a> {
         // regenerate a new random nonce - never reuse the same keystream!!
         thread_rng().fill_bytes(&mut file.headers.nonce);
         file.encryptor.reset_with_nonce(&file.headers.nonce);
@@ -349,7 +388,7 @@ impl EncryptedFileAppender {
         io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
     }
 }
-impl crate::locker::io::Write for EncryptedFileAppender {
+impl<'a> crate::locker::io::Write for EncryptedFileAppender<'a> {
     fn write(&mut self, byte: u8) -> Result<&mut Self> {
         // update the hmac hasher
         self.file.hasher.update(&[byte]);

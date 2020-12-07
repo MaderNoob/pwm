@@ -29,9 +29,9 @@ trait GetSortFieldValue {
 impl GetSortFieldValue for Password {
     fn get_sort_field_value(&self, sort_by: &SortBy) -> Option<String> {
         match sort_by {
-            SortBy::Domain => Some(self.domain),
-            SortBy::Username => Some(self.username),
-            SortBy::Email => self.email,
+            SortBy::Domain => Some(self.domain.clone()),
+            SortBy::Username => Some(self.username.clone()),
+            SortBy::Email => self.email.clone(),
             SortBy::Other(field_name) => self.additional_fields.get(field_name).cloned(),
         }
     }
@@ -40,8 +40,8 @@ pub trait Sort{
     fn sort(self, sort_by: SortBy) -> Result<SortedPasswords>;
 }
 impl<T: fallible_iterator::FallibleIterator<Item = Password, Error = Error>> Sort for T {
-    fn sort(self, sort_by: SortBy) -> Result<SortedPasswords> {
-        let result = SortedPasswords::new();
+    fn sort(mut self, sort_by: SortBy) -> Result<SortedPasswords> {
+        let mut result = SortedPasswords::new();
         while let Some(password) = self.next()? {
             let sort_field_value=password.get_sort_field_value(&sort_by);
             match result.get_mut(&sort_field_value){

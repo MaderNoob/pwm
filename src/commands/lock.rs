@@ -1,4 +1,5 @@
-use crate::locker::encrypt::EncryptedFile;
+use crate::locker::encrypt::{EncryptedFile};
+use crate::locker::encrypt::inner_files::InnerFile;
 use crate::locker::errors::{Result,print_error};
 use crate::locker::flags::{MutableFile};
 use crate::styles::{error_style,success_style};
@@ -6,7 +7,7 @@ use crate::styles::{error_style,success_style};
 fn lock(path:&str,key:&str,make_immutable:bool)->Result<()>{
     let mut file=EncryptedFile::encrypt_file(path, key)?;
     if make_immutable{
-        file.make_immutable()?;
+        file.inner_file_mut().make_immutable()?;
     }
     Ok(())
 }

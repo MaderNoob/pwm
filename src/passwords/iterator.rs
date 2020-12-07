@@ -3,13 +3,13 @@ use crate::locker::errors::{Error, Result,to_locker_error};
 use crate::passwords::Password;
 use crate::passwords::io::PasswordReader;
 use fallible_iterator::FallibleIterator;
-pub struct PasswordIterator {
-    reader: EncryptedFileReader,
+pub struct PasswordIterator<'a> {
+    reader: EncryptedFileReader<'a>,
     total_passwords: usize,
     current_password_index: usize,
 }
-impl PasswordIterator {
-    pub fn new(file: EncryptedFile) -> Result<PasswordIterator> {
+impl<'a> PasswordIterator<'a> {
+    pub fn new(file: &'a mut EncryptedFile) -> Result<PasswordIterator> {
         let mut reader = file.reader();
         Ok(PasswordIterator {
             total_passwords: to_locker_error(reader.read_usize(),ErrorKind::CorruptedFile)?,
@@ -19,7 +19,7 @@ impl PasswordIterator {
     }
 }
 
-impl FallibleIterator for PasswordIterator {
+impl<'a> FallibleIterator for PasswordIterator<'a> {
     type Error = Error;
     type Item = Password;
     fn next(&mut self) -> Result<Option<Self::Item>> {

@@ -6,13 +6,13 @@ pub mod encrypt;
 
 use errors::Result;
 use flags::{MutableFile};
-use encrypt::{LockedEncryptedFile,EncryptedFile};
+use encrypt::{LockedEncryptedFile,EncryptedFile,inner_files::InnerFile};
 use std::fs::{File,OpenOptions};
 
 pub fn lock<P: AsRef<std::path::Path>>(path: P,key:&str, make_immutable: bool) -> Result<()> {
     let mut encrypted_file=EncryptedFile::encrypt_file(path, key)?;
     if make_immutable && cfg!(unix){
-        encrypted_file.make_immutable()?
+        encrypted_file.inner_file_mut().make_immutable()?
     }
     Ok(())
 }

@@ -35,6 +35,7 @@ impl EncryptionHeaders {
         hasher.update(content);
         result.hmac.as_mut().copy_from_slice(&hasher.finalize_reset());
 
+        // salted key hash
         hasher.update(key.as_ref());
         hasher.update(result.salt);
         result.salted_key_hash.as_mut().copy_from_slice(&hasher.finalize_reset());

@@ -8,12 +8,12 @@ pub enum PrintingMode {
     Verbose,
 }
 pub fn print_passwords<T: FallibleIterator<Item = Password, Error = Error>>(
-    passwords_iter: T,
+    mut passwords_iter: T,
     printing_mode: PrintingMode,
 ) -> Result<()> {
     let style=crate::styles::password_style();
     while let Some(password) = passwords_iter.next()?{
-        print_single_password(password, printing_mode, &style)
+        print_single_password(password, &printing_mode, &style)
     }
     Ok(())
 }
@@ -22,15 +22,15 @@ pub fn print_sorted_passwords(sorted_passwords:SortedPasswords,printing_mode: Pr
     let style=crate::styles::password_style();
     for (sort_field_value,passwords) in sorted_passwords{
         let sort_field_value_string=match sort_field_value{
-            Some(s)=>&s,
-            None=>"None"
+            Some(s)=>s,
+            None=>"None".to_string(),
         };
         match term_size::dimensions(){
-            Some((width,height))=>println!("{:=^width$}",sort_field_value_string,width=width),
+            Some((width,_))=>println!("{:=^width$}",sort_field_value_string,width=width),
             None=>println!("{}",sort_field_value_string),
         }
         for password in passwords{
-            print_single_password_indented(password, printing_mode, &style);
+            print_single_password_indented(password, &printing_mode, &style);
         }
     }
 }
@@ -58,7 +58,7 @@ impl std::fmt::Display for CapitalizedString{
     }
 }
 
-fn print_single_password(password:Password,printing_mode: PrintingMode,password_style:&Style){
+fn print_single_password(password:Password,printing_mode: &PrintingMode,password_style:&Style){
     match printing_mode{
         PrintingMode::Normal=>{
             println!("{}@{}: '{}'",password.username,password.domain,password_style.paint(password.password));
@@ -76,7 +76,7 @@ fn print_single_password(password:Password,printing_mode: PrintingMode,password_
         }
     }
 }
-fn print_single_password_indented(password:Password,printing_mode: PrintingMode,password_style:&Style){
+fn print_single_password_indented(password:Password,printing_mode: &PrintingMode,password_style:&Style){
     match printing_mode{
         PrintingMode::Normal=>{
             println!("\t{}@{}: '{}'",password.username,password.domain,password_style.paint(password.password));

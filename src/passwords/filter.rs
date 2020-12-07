@@ -27,24 +27,24 @@ impl PasswordFilter {
         }
     }
     pub fn test(&self, password: &Password) -> bool {
-        if let Some(pf) = self.password_filter {
+        if let Some(pf) = &self.password_filter {
             if !password.password.contains(&pf[..]) {
                 return false;
             }
         }
-        if let Some(df) = self.domain_filter {
+        if let Some(df) = &self.domain_filter {
             if !password.domain.contains(&df[..]) {
                 return false;
             }
         }
-        if let Some(uf) = self.username_filter {
+        if let Some(uf) = &self.username_filter {
             if !password.username.contains(&uf[..]) {
                 return false;
             }
         }
-        match self.email_filter {
+        match &self.email_filter {
             Some(Some(ef))=>{
-                match password.email {
+                match &password.email {
                     Some(email) => {
                         if !email.contains(&ef[..]) {
                             return false;
@@ -59,8 +59,8 @@ impl PasswordFilter {
             _=>{},
             
         }
-        for (filter_key, filter) in self.additional_filters {
-            match password.additional_fields.get(&filter_key) {
+        for (filter_key, filter) in &self.additional_filters {
+            match password.additional_fields.get(filter_key) {
                 Some(value) => {
                     if !value.contains(&filter[..]) {
                         return false;
@@ -87,12 +87,12 @@ impl PasswordFilter {
     }
 }
 
-pub struct FilteredPasswordIterator {
-    iterator: PasswordIterator,
+pub struct FilteredPasswordIterator<'a> {
+    iterator: PasswordIterator<'a>,
     filter: PasswordFilter,
 }
 
-impl FallibleIterator for FilteredPasswordIterator {
+impl<'a> FallibleIterator for FilteredPasswordIterator<'a> {
     type Item = Password;
     type Error = Error;
     fn next(&mut self) -> Result<Option<Password>> {
@@ -109,11 +109,11 @@ impl FallibleIterator for FilteredPasswordIterator {
     }
 }
 
-pub trait Filter {
-    fn filter(self, filter: PasswordFilter) -> FilteredPasswordIterator;
+pub trait Filter<'a> {
+    fn filter_passwords(self, filter: PasswordFilter) -> FilteredPasswordIterator<'a>;
 }
-impl Filter for PasswordIterator {
-    fn filter(self, filter: PasswordFilter) -> FilteredPasswordIterator {
+impl<'a> Filter<'a> for PasswordIterator<'a> {
+    fn filter_passwords(self, filter: PasswordFilter) -> FilteredPasswordIterator<'a> {
         FilteredPasswordIterator {
             iterator: self,
             filter,
