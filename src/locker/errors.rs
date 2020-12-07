@@ -15,6 +15,9 @@ pub enum ErrorKind {
     EncryptionError,
     RevertToBackup,
     PromptPasswordIOError,
+    EncodingError,
+    CorruptedFile,
+    HomeDir,
 }
 impl ErrorKind {
     pub fn without_source_error(self) -> Error {
@@ -30,6 +33,7 @@ impl ErrorKind {
         }
     }
 }
+#[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
     source_error: Option<std::io::Error>,
@@ -37,6 +41,12 @@ pub struct Error {
 impl Error {
     pub fn kind(&self) -> &ErrorKind {
         &self.kind
+    }
+    pub fn with_kind(self,kind:ErrorKind)->Error{
+        Error{
+            kind,
+            source_error:self.source_error,
+        }
     }
 }
 pub type Result<T> = std::result::Result<T, Error>;
@@ -81,7 +91,10 @@ pub fn print_error(error: Error, file_prefix: &str, error_style: &ansi_term::Sty
         ErrorKind::WrongPassword=>"An unexpected error has occured (wrong password error)".to_string(),
         ErrorKind::EncryptionError=>"An unexpected enryption error has occured".to_string(),
         ErrorKind::RevertToBackup=>format!("Failed to revert the {} file to the backup{}",file_prefix,source_error_str),
-        ErrorKind::PromptPasswordIOError=>format!("An unexpected IO error has occured while trying to prompt the user to enter a password{}",source_error_str)
+        ErrorKind::PromptPasswordIOError=>format!("An unexpected IO error has occured while trying to prompt the user to enter a password{}",source_error_str),
+        ErrorKind::EncodingError=>format!("Failed to decode the {} file as UTF-8{}",file_prefix,source_error_str),
+        ErrorKind::CorruptedFile=>format!("The {} file is corrupted{}",file_prefix,source_error_str),
+        ErrorKind::HomeDir=>format!("Failed to get the path of the current user's home directory{}",source_error_str)
     };
     eprintln!("{}", error_style.paint(err));
 }

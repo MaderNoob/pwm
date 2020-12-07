@@ -18,6 +18,9 @@ impl VecReader{
             Err(())
         }
     }
+    pub fn consume(&mut self,amount:usize){
+        self.pos+=amount
+    }
     pub fn rest(&self)->&[u8]{
         &self.vector[self.pos..]
     }

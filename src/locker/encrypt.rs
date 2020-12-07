@@ -1,7 +1,7 @@
 use crate::locker::errors::{io_to_locker_error, to_locker_error, ErrorKind, Result};
 use crate::locker::flags::{MutableFile, UnixFile, UnixFileFlags};
 use crate::locker::headers::{EncryptionHeaders, ENCRYPTION_HEADERS_SIZE};
-use crate::locker::vec_reader::VecReader;
+use crate::vec_reader::VecReader;
 use chacha20::{
     cipher::NewStreamCipher, cipher::SyncStreamCipher, cipher::SyncStreamCipherSeek, ChaCha20,
     Nonce,
@@ -97,6 +97,7 @@ impl LockedEncryptedFile {
     }
     pub fn unlock<B: AsRef<[u8]>>(mut self, key: B) -> Result<EncryptedFile> {
         let mut encryptor = Encryptor::new(key.as_ref(), &self.headers.nonce);
+
         // decrypt the content
         encryptor.apply(self.reader.rest_mut())?;
 
@@ -163,7 +164,7 @@ impl EncryptedFile {
             Err(e) => {
                 // if failed to write the content, rewrite the original content
                 // that was overwritten when writing the headers to the file
-                file.write_all(&content[..ENCRYPTION_HEADERS_SIZE]);
+                let _ = file.write_all(&content[..ENCRYPTION_HEADERS_SIZE]);
                 Err(ErrorKind::RevertToBackup.with_source_error(e))
             }
         }
@@ -197,14 +198,30 @@ impl EncryptedFile {
 pub struct EncryptedFileReader {
     file: EncryptedFile,
 }
-impl EncryptedFileReader {
-    pub fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+impl crate::locker::io::Read for EncryptedFileReader {
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         match self.file.reader.read_exact(buf) {
             Ok(_) => Ok(()),
-            Err(e) => Err(ErrorKind::ReadFile.without_source_error()),
+            Err(_) => Err(ErrorKind::CorruptedFile.without_source_error()),
         }
     }
+    fn read_until(&mut self, terminator: u8) -> Vec<u8> {
+        let mut length = 0usize;
+        let mut res = Vec::new();
+        // used the extra scop so that rest, which is a reference to self.file.reader will
+        // be dropped, otherwise self.file.reader couldn't be used later on
+        {
+            let rest = self.file.reader.rest();
+            while rest[length] != terminator && length < rest.len() {
+                length += 1;
+            }
+            res.extend_from_slice(&rest[..length]);
+        }
+        self.file.reader.consume(length + 1);
+        res
+    }
 }
+
 pub struct EncryptedFileWriter {
     file: EncryptedFile,
     buffer: Vec<u8>,
@@ -212,15 +229,49 @@ pub struct EncryptedFileWriter {
 impl EncryptedFileWriter {
     pub fn new(mut file: EncryptedFile) -> EncryptedFileWriter {
         // regenerate a new random nonce - never reuse the same keystream!!
-        let mut nonce = Nonce::default();
-        thread_rng().fill_bytes(&mut nonce);
-        file.encryptor.reset_with_nonce(&nonce);
+        thread_rng().fill_bytes(&mut file.headers.nonce);
+        file.encryptor.reset_with_nonce(&file.headers.nonce);
         EncryptedFileWriter {
-            file: file,
+            file,
             buffer: Vec::new(),
         }
     }
-    pub fn write_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
+    fn seek_file(&mut self, pos: u64) -> Result<u64> {
+        io_to_locker_error(
+            self.file.file.seek(SeekFrom::Start(pos)),
+            ErrorKind::SeekFile,
+        )
+    }
+    fn write_hmac_and_nonce(&mut self) -> Result<()> {
+        io_to_locker_error(
+            self.file.file.write_all(&self.file.headers.hmac),
+            ErrorKind::WriteFile,
+        )?;
+        io_to_locker_error(
+            self.file.file.write_all(&self.file.headers.nonce),
+            ErrorKind::WriteFile
+        )
+    }
+    fn write_buffer(&mut self) -> Result<()> {
+        io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
+    }
+}
+impl crate::locker::io::Write for EncryptedFileWriter {
+    fn write(&mut self, byte: u8) -> Result<&mut Self> {
+        // update the hmac hasher
+        self.file.hasher.update(&[byte]);
+
+        // add the bytes to the buffer
+        self.buffer.push(byte);
+
+        // encrypt the new bytes
+        let buffer_len = self.buffer.len();
+        self.file
+            .encryptor
+            .apply(&mut self.buffer[buffer_len - 1..])?;
+        Ok(self)
+    }
+    fn write_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
         // update the hmac hasher
         self.file.hasher.update(buf);
 
@@ -234,31 +285,15 @@ impl EncryptedFileWriter {
             .apply(&mut self.buffer[buffer_len - buf.len()..])?;
         Ok(self)
     }
-    fn seek_file(&mut self, pos: u64) -> Result<u64> {
-        io_to_locker_error(
-            self.file.file.seek(SeekFrom::Start(pos)),
-            ErrorKind::SeekFile,
-        )
-    }
-    fn write_hmac(&mut self) -> Result<()> {
-        io_to_locker_error(
-            self.file.file.write_all(&self.file.headers.hmac),
-            ErrorKind::WriteFile,
-        )
-    }
-    fn write_buffer(&mut self) -> Result<()> {
-        io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
-    }
-    pub fn flush(mut self) -> Result<()> {
+    fn flush(mut self) -> Result<()> {
         self.file
             .headers
             .hmac
             .as_mut()
             .copy_from_slice(&self.file.hasher.finalize_reset());
-
         // rewrite the hmac
         self.seek_file(0)?;
-        self.write_hmac()?;
+        self.write_hmac_and_nonce()?;
 
         // write the new content
         self.seek_file(ENCRYPTION_HEADERS_SIZE as u64)?;
@@ -275,6 +310,7 @@ impl EncryptedFileWriter {
         Ok(())
     }
 }
+
 pub struct EncryptedFileAppender {
     file: EncryptedFile,
     buffer: Vec<u8>,
@@ -282,9 +318,8 @@ pub struct EncryptedFileAppender {
 impl EncryptedFileAppender {
     pub fn new(mut file: EncryptedFile) -> EncryptedFileAppender {
         // regenerate a new random nonce - never reuse the same keystream!!
-        let mut nonce = Nonce::default();
-        thread_rng().fill_bytes(&mut nonce);
-        file.encryptor.reset_with_nonce(&nonce);
+        thread_rng().fill_bytes(&mut file.headers.nonce);
+        file.encryptor.reset_with_nonce(&file.headers.nonce);
 
         // update the hmac hasher with the original content of the file,
         // and then re-update it everytime we append to get the full hmac
@@ -300,16 +335,36 @@ impl EncryptedFileAppender {
             ErrorKind::SeekFile,
         )
     }
-    fn write_hmac(&mut self) -> Result<()> {
+    fn write_hmac_and_nonce(&mut self) -> Result<()> {
         io_to_locker_error(
             self.file.file.write_all(&self.file.headers.hmac),
+            ErrorKind::WriteFile,
+        )?;
+        io_to_locker_error(
+            self.file.file.write_all(&self.file.headers.nonce),
             ErrorKind::WriteFile,
         )
     }
     fn write_buffer(&mut self) -> Result<()> {
         io_to_locker_error(self.file.file.write_all(&self.buffer), ErrorKind::WriteFile)
     }
-    pub fn append_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
+}
+impl crate::locker::io::Write for EncryptedFileAppender {
+    fn write(&mut self, byte: u8) -> Result<&mut Self> {
+        // update the hmac hasher
+        self.file.hasher.update(&[byte]);
+
+        // add the bytes to the buffer
+        self.buffer.push(byte);
+
+        // encrypt the new bytes
+        let buffer_len = self.buffer.len();
+        self.file
+            .encryptor
+            .apply(&mut self.buffer[buffer_len - 1..])?;
+        Ok(self)
+    }
+    fn write_all(&mut self, buf: &[u8]) -> Result<&mut Self> {
         // update the hmac hasher
         self.file.hasher.update(buf);
 
@@ -323,7 +378,7 @@ impl EncryptedFileAppender {
             .apply(&mut self.buffer[buffer_len - buf.len()..])?;
         Ok(self)
     }
-    pub fn flush(mut self) -> Result<()> {
+    fn flush(mut self) -> Result<()> {
         self.file
             .headers
             .hmac
@@ -332,7 +387,7 @@ impl EncryptedFileAppender {
 
         // rewrite the hmac
         self.seek_file(0)?;
-        self.write_hmac()?;
+        self.write_hmac_and_nonce()?;
 
         //  === append the new content ===
 

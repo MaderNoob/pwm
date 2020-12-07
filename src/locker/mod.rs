@@ -1,8 +1,8 @@
-pub mod encrypt;
 pub mod errors;
 pub mod flags;
 pub mod headers;
-mod vec_reader;
+pub mod io;
+pub mod encrypt;
 
 use errors::Result;
 use flags::{MutableFile};

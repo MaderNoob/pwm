@@ -6,3 +6,7 @@ pub fn error_style()->Style{
 pub fn success_style()->Style{
     Color::Green.bold()
 }
+
+pub fn password_style()->Style{
+    Color::Green.normal()
+}

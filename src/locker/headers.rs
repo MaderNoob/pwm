@@ -1,5 +1,5 @@
 use crate::locker::errors::{ErrorKind, Result,io_to_locker_error};
-use crate::locker::vec_reader::VecReader;
+use crate::vec_reader::VecReader;
 use chacha20::{ChaCha20,Nonce,cipher::NewStreamCipher};
 use generic_array::GenericArray;
 use sha2::{Digest, Sha512};
@@ -14,8 +14,9 @@ pub const SHA_512_DIGEST_SIZE:usize=<Sha512 as Digest>::OutputSize::USIZE;
 pub const CHACHA20_NONCE_SIZE:usize=<ChaCha20 as NewStreamCipher>::NonceSize::USIZE;
 pub const ENCRYPTION_HEADERS_SIZE:usize=
     SALT_LENGTH + 
-    SHA_512_DIGEST_SIZE*2 + // salted key hash and hmac
-    CHACHA20_NONCE_SIZE; // nonce
+    CHACHA20_NONCE_SIZE+ // nonce
+    SHA_512_DIGEST_SIZE*2;// salted key hash and hmac
+
 pub struct EncryptionHeaders {
     pub hmac:Sha512Digest,
     pub salt: [u8;SALT_LENGTH],
@@ -51,9 +52,9 @@ impl EncryptionHeaders {
             headers: &mut EncryptionHeaders,
         ) -> std::result::Result<(),()> {
             reader.read_exact(&mut headers.hmac)?;
+            reader.read_exact(&mut headers.nonce)?;
             reader.read_exact(&mut headers.salt)?;
-            reader.read_exact(&mut headers.salted_key_hash)?;
-            reader.read_exact(&mut headers.nonce)
+            reader.read_exact(&mut headers.salted_key_hash)
         }
         let mut headers=EncryptionHeaders::default();
         match read_with_unit_error(reader,&mut headers){
@@ -65,14 +66,14 @@ impl EncryptionHeaders {
         let mut current_index=0;
         buf[..SHA_512_DIGEST_SIZE].copy_from_slice(&self.hmac);
         current_index+=SHA_512_DIGEST_SIZE;
-
+        
+        buf[current_index..current_index+CHACHA20_NONCE_SIZE].copy_from_slice(&self.nonce);
+        current_index+=CHACHA20_NONCE_SIZE;
+        
         buf[current_index..current_index+SALT_LENGTH].copy_from_slice(&self.salt);
         current_index+=SALT_LENGTH;
 
         buf[current_index..current_index+SHA_512_DIGEST_SIZE].copy_from_slice(&self.salted_key_hash);
-        current_index+=SHA_512_DIGEST_SIZE;
-
-        buf[current_index..current_index+CHACHA20_NONCE_SIZE].copy_from_slice(&self.nonce);
     }
 }
 impl Default for EncryptionHeaders{
