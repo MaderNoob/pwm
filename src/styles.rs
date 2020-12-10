@@ -25,7 +25,7 @@ pub fn passwords_printing_styles()->PasswordPrintingStyles{
         password_style:Color::Green.bold(),
         username_style:Color::Purple.bold(),
         domain_style:Color::Purple.bold(),
-        at_symbol_style:Color::White.bold(),
+        at_symbol_style:Color::White.normal(),
         field_name_style:Color::Cyan.normal(),
         field_value_style:Color::Cyan.normal(),
         sort_field_value_style:Color::White.bold(),

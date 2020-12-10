@@ -1,4 +1,5 @@
 use crate::{
+    wrapped_clipboard,
     input::prompt_user_to_unlock_file_with_password,
     locker::{print_error, EncryptedFile, LockedEncryptedFile, MutableFile, Result},
     passwords::{Filter, PasswordFilter, PasswordIterator, Sort, SortBy},
@@ -18,10 +19,10 @@ pub fn get_passwords_from_unlocked_file(
     let passwords = PasswordIterator::new(file);
     match (filter.is_redundant(), sort_by) {
         (true, None) => print_passwords(passwords, printing_mode)?,
-        (true, Some(s)) => print_sorted_passwords(passwords.sort(s)?, printing_mode),
+        (true, Some(s)) => print_sorted_passwords(passwords.sort(s)?, printing_mode)?,
         (false, None) => print_passwords(passwords.filter_passwords(filter), printing_mode)?,
         (false, Some(s)) => {
-            print_sorted_passwords(passwords.filter_passwords(filter).sort(s)?, printing_mode)
+            print_sorted_passwords(passwords.filter_passwords(filter).sort(s)?, printing_mode)?
         }
     };
     Ok(())

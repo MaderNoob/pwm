@@ -43,15 +43,15 @@ impl PasswordGeneratorOptions {
     }
 }
 
-pub fn generate_password(settings: &PasswordGeneratorOptions) -> Result<String> {
-    if settings.password_length == 0 {
+pub fn generate_password(options: &PasswordGeneratorOptions) -> Result<String> {
+    if options.password_length == 0 {
         return Err(ErrorKind::PasswordLengthZero.without_source_error());
     }
-    let dict = settings.get_dictionary()?;
+    let dict = options.get_dictionary()?;
     let dict_length = dict.len();
     let mut random = thread_rng();
-    let mut result=String::with_capacity(settings.password_length);
-    for _ in 0..settings.password_length{
+    let mut result=String::with_capacity(options.password_length);
+    for _ in 0..options.password_length{
         result.push(dict[random.gen_range::<usize, _, _>(0, dict_length)])
     }
     Ok(result)

@@ -1,8 +1,4 @@
-use crate::{
-    locker::{Error, Result},
-    passwords::{SortBy, SortedPasswords},
-    styles::warning_style,
-};
+use crate::{locker::{Error, Result}, passwords::{SortBy, SortedPasswords}, styles::{success_style, warning_style}, wrapped_clipboard};
 use crate::{passwords::Password, styles::PasswordPrintingStyles};
 use fallible_iterator::FallibleIterator;
 pub enum PrintingMode {
@@ -14,41 +10,60 @@ pub fn print_passwords<T: FallibleIterator<Item = Password, Error = Error>>(
     printing_mode: PrintingMode,
 ) -> Result<()> {
     let styles = crate::styles::passwords_printing_styles();
-    let mut total = 0usize;
+    let mut last_password = None;
+    let mut total=0usize;
     while let Some(password) = passwords_iter.next()? {
-        print_single_password(password, &printing_mode, &styles);
-        total += 1;
+        print_single_password(&password, &printing_mode, &styles);
+        if last_password.is_none(){
+            last_password=Some(password);
+        }
+        total+=1;
     }
-    if total == 0 {
-        println!("{}", warning_style().paint("No Results"));
+    match last_password{
+        None=>println!("{}", warning_style().paint("No Results")),
+        Some(pwd) if total==1 =>{
+            wrapped_clipboard::clipboard_set(&pwd.password)?;
+            println!("{}",success_style().paint("The password was successfully copied to the clipboard"))
+        },
+        _=>{}
     }
     Ok(())
 }
 
-pub fn print_sorted_passwords(sorted_passwords: SortedPasswords, printing_mode: PrintingMode) {
+pub fn print_sorted_passwords(sorted_passwords: SortedPasswords, printing_mode: PrintingMode)->Result<()> {
     let styles = crate::styles::passwords_printing_styles();
-    let mut total = 0usize;
+    let mut last_password=None;
+    let mut total=0usize;
     for (sort_field_value, passwords) in sorted_passwords.entries {
         let sort_field_value_string = match sort_field_value {
             Some(s) => s,
-            None => "none".to_string(),
+            None => "None".to_string(),
         };
         println!(
             "{}",
             styles.sort_field_value_style.paint(sort_field_value_string),
         );
         for password in passwords {
-            print_single_password_indented(password, &printing_mode, &styles);
-            total += 1;
+            print_single_password_indented(&password, &printing_mode, &styles);
+            if last_password.is_none(){
+                last_password=Some(password);
+            }
+            total+=1;
         }
     }
-    if total == 0 {
-        println!("{}", warning_style().paint("no results"));
+    match last_password{
+        None=>println!("{}", warning_style().paint("No Results")),
+        Some(pwd) if total==1 =>{
+            wrapped_clipboard::clipboard_set(&pwd.password)?;
+            println!("{}",success_style().paint("The password was successfully copied to the clipboard"))
+        },
+        _=>{}
     }
+    Ok(())
 }
 
 fn print_single_password(
-    password: Password,
+    password: &Password,
     printing_mode: &PrintingMode,
     styles: &PasswordPrintingStyles,
 ) {
@@ -56,20 +71,20 @@ fn print_single_password(
         PrintingMode::Normal => {
             println!(
                 "{}{}{}: '{}'",
-                styles.username_style.paint(password.username),
+                styles.username_style.paint(&password.username),
                 styles.at_symbol_style.paint("@"),
-                styles.domain_style.paint(password.domain),
-                styles.password_style.paint(password.password)
+                styles.domain_style.paint(&password.domain),
+                styles.password_style.paint(&password.password)
             );
         }
         PrintingMode::Verbose => {
             println!(
                 "{}{}{}",
-                styles.username_style.paint(password.username),
+                styles.username_style.paint(&password.username),
                 styles.at_symbol_style.paint("@"),
-                styles.domain_style.paint(password.domain),
+                styles.domain_style.paint(&password.domain),
             );
-            for (field_name, field_value) in password.additional_fields {
+            for (field_name, field_value) in &password.additional_fields {
                 println!(
                     " - {}: '{}'",
                     styles.field_name_style.paint(field_name),
@@ -78,15 +93,15 @@ fn print_single_password(
             }
             println!(
                 " - {}: '{}'",
-                styles.password_style.paint("password"),
-                styles.password_style.paint(password.password)
+                styles.password_style.paint("Password"),
+                styles.password_style.paint(&password.password)
             );
             println!();
         }
     }
 }
 fn print_single_password_indented(
-    password: Password,
+    password: &Password,
     printing_mode: &PrintingMode,
     styles: &PasswordPrintingStyles,
 ) {
@@ -94,20 +109,20 @@ fn print_single_password_indented(
         PrintingMode::Normal => {
             println!(
                 "\t{}{}{}: '{}'",
-                styles.username_style.paint(password.username),
+                styles.username_style.paint(&password.username),
                 styles.at_symbol_style.paint("@"),
-                styles.domain_style.paint(password.domain),
-                styles.password_style.paint(password.password)
+                styles.domain_style.paint(&password.domain),
+                styles.password_style.paint(&password.password)
             );
         }
         PrintingMode::Verbose => {
             println!(
                 "\t{}{}{}",
-                styles.username_style.paint(password.username),
+                styles.username_style.paint(&password.username),
                 styles.at_symbol_style.paint("@"),
-                styles.domain_style.paint(password.domain),
+                styles.domain_style.paint(&password.domain),
             );
-            for (field_name, field_value) in password.additional_fields {
+            for (field_name, field_value) in &password.additional_fields {
                 println!(
                     "\t - {}: '{}'",
                     styles.field_name_style.paint(field_name),
@@ -116,8 +131,8 @@ fn print_single_password_indented(
             }
             println!(
                 "\t - {}: '{}'",
-                styles.password_style.paint("password"),
-                styles.password_style.paint(password.password)
+                styles.password_style.paint("Password"),
+                styles.password_style.paint(&password.password)
             );
             println!();
         }

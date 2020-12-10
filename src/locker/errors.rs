@@ -20,6 +20,7 @@ pub enum ErrorKind {
     HomeDir,
     EmptyPasswordDict,
     PasswordLengthZero,
+    CopyToClipboard,
 }
 impl ErrorKind {
     pub fn without_source_error(self) -> Error {
@@ -99,6 +100,7 @@ pub fn print_error(error: Error, file_prefix: &str, error_style: &ansi_term::Sty
         ErrorKind::HomeDir=>format!("Failed to get the path of the current user's home directory{}",source_error_str),
         ErrorKind::EmptyPasswordDict=>format!("The password generation dictionary can't be empty{}",source_error_str),
         ErrorKind::PasswordLengthZero=>format!("The password length can't be 0{}",source_error_str),
+        ErrorKind::CopyToClipboard=>format!("Failed to copy to the clipboard{}",source_error_str),
     };
     eprintln!("{}", error_style.paint(err));
 }
