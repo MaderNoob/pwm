@@ -1,7 +1,6 @@
 use crate::styles::{error_style, success_style};
 use crate::input::prompt_user_to_unlock_file_with_password;
-use crate::locker::encrypt::{LockedEncryptedFile};
-use crate::locker::errors::{print_error, Result};
+use crate::locker::{LockedEncryptedFile,print_error,Result};
 
 fn unlock(path: &str) -> Result<()> {
     let file = LockedEncryptedFile::open_write(path)?;

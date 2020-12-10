@@ -1,16 +1,14 @@
-use crate::locker::errors::{ErrorKind, Result,io_to_locker_error};
-use crate::vec_reader::VecReader;
+use crate::locker::{ErrorKind, Result};
+use crate::vec_io::VecReader;
 use chacha20::{ChaCha20,Nonce,cipher::NewStreamCipher};
 use generic_array::GenericArray;
-use sha2::{Digest, Sha512};
+use sha3::{Digest, Sha3_512};
 use generic_array::typenum::Unsigned;
-use std::fs::File;
-use std::io::Read;
-use rand::{thread_rng,Rng,RngCore};
+use rand::{thread_rng,RngCore};
 
-pub type Sha512Digest = GenericArray<u8, <Sha512 as Digest>::OutputSize>;
+pub type Sha512Digest = GenericArray<u8, <Sha3_512 as Digest>::OutputSize>;
 pub const SALT_LENGTH:usize=16;
-pub const SHA_512_DIGEST_SIZE:usize=<Sha512 as Digest>::OutputSize::USIZE;
+pub const SHA_512_DIGEST_SIZE:usize=<Sha3_512 as Digest>::OutputSize::USIZE;
 pub const CHACHA20_NONCE_SIZE:usize=<ChaCha20 as NewStreamCipher>::NonceSize::USIZE;
 pub const ENCRYPTION_HEADERS_SIZE:usize=
     SALT_LENGTH + 
@@ -24,7 +22,7 @@ pub struct EncryptionHeaders {
     pub nonce: Nonce,
 }
 impl EncryptionHeaders {
-    pub fn new<B:AsRef<[u8]>>(hasher:&mut Sha512,content:&Vec<u8>,key:B)->EncryptionHeaders{
+    pub fn new<B:AsRef<[u8]>>(hasher:&mut Sha3_512,content:&[u8],key:B)->EncryptionHeaders{
         let mut thread_random = thread_rng();
         let mut result=EncryptionHeaders::default();
         

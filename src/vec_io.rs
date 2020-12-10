@@ -21,6 +21,13 @@ impl VecReader{
     pub fn consume(&mut self,amount:usize){
         self.pos+=amount
     }
+    pub fn seek_back(&mut self,amount:usize){
+        if amount>self.pos{
+            self.pos=0;
+        }else{
+            self.pos-=amount;
+        }
+    }
     pub fn rest(&self)->&[u8]{
         &self.vector[self.pos..]
     }
@@ -29,5 +36,17 @@ impl VecReader{
     }
     pub fn buffer(&self)->&[u8]{
         &self.vector
+    }
+    pub fn inner_vec(self)->Vec<u8>{
+        self.vector
+    }
+    pub fn inner_vec_ref(&self)->&Vec<u8>{
+        &self.vector
+    }
+    pub fn inner_vec_mut(&mut self)->&mut Vec<u8>{
+        &mut self.vector
+    }
+    pub fn eof(&self)->bool{
+        self.pos>=self.vector.len()
     }
 }

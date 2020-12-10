@@ -1,7 +1,5 @@
 use crate::commands::pwm::master_password::check_master_password;
-use crate::locker::encrypt::{EncryptedFile, LockedEncryptedFile};
-use crate::locker::errors::{print_error, ErrorKind, Result};
-use ansi_term::Style;
+use crate::locker::{ErrorKind, Result,EncryptedFile, LockedEncryptedFile};
 use std::io::{Stdout, Write};
 fn flush_stdout_and_read_password(stdout: &mut Stdout) -> std::io::Result<String> {
     stdout.flush()?;

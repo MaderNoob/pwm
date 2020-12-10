@@ -1,5 +1,5 @@
 use crate::locker::{
-    encrypt::inner_files::InnerFile,
+    encrypt::InnerFile,
     errors::{ErrorKind, Result},
 };
 use std::fs;

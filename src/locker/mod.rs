@@ -1,13 +1,9 @@
-pub mod errors;
-pub mod flags;
-pub mod headers;
-pub mod io;
-pub mod encrypt;
-
-use errors::Result;
-use flags::{MutableFile};
-use encrypt::{LockedEncryptedFile,EncryptedFile,inner_files::InnerFile};
-use std::fs::{File,OpenOptions};
+mod errors;
+mod flags;
+mod headers;
+mod io;
+mod encrypt;
+pub use {errors::*,flags::*,headers::*,io::*,encrypt::*};
 
 pub fn lock<P: AsRef<std::path::Path>>(path: P,key:&str, make_immutable: bool) -> Result<()> {
     let mut encrypted_file=EncryptedFile::encrypt_file(path, key)?;

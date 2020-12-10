@@ -1,7 +1,9 @@
-pub mod io;
-pub mod iterator;
-pub mod filter;
-pub mod sort;
+mod io;
+mod iterator;
+mod filter;
+mod sort;
+mod generator;
+pub use {io::*,iterator::*,sort::*,filter::*,generator::*};
 
 use std::collections::HashMap;
 
@@ -10,6 +12,5 @@ pub struct Password{
     pub password:String,
     pub domain:String,
     pub username:String,
-    pub email:Option<String>,
     pub additional_fields:HashMap<String,String>,
 }

@@ -1,7 +1,4 @@
-use crate::locker::encrypt::{EncryptedFile};
-use crate::locker::encrypt::inner_files::InnerFile;
-use crate::locker::errors::{Result,print_error};
-use crate::locker::flags::{MutableFile};
+use crate::locker::{EncryptedFile,InnerFile,Result,print_error,MutableFile};
 use crate::styles::{error_style,success_style};
 
 fn lock(path:&str,key:&str,make_immutable:bool)->Result<()>{

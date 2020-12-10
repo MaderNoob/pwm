@@ -18,6 +18,8 @@ pub enum ErrorKind {
     EncodingError,
     CorruptedFile,
     HomeDir,
+    EmptyPasswordDict,
+    PasswordLengthZero,
 }
 impl ErrorKind {
     pub fn without_source_error(self) -> Error {
@@ -94,7 +96,9 @@ pub fn print_error(error: Error, file_prefix: &str, error_style: &ansi_term::Sty
         ErrorKind::PromptPasswordIOError=>format!("An unexpected IO error has occured while trying to prompt the user to enter a password{}",source_error_str),
         ErrorKind::EncodingError=>format!("Failed to decode the {} file as UTF-8{}",file_prefix,source_error_str),
         ErrorKind::CorruptedFile=>format!("The {} file is corrupted{}",file_prefix,source_error_str),
-        ErrorKind::HomeDir=>format!("Failed to get the path of the current user's home directory{}",source_error_str)
+        ErrorKind::HomeDir=>format!("Failed to get the path of the current user's home directory{}",source_error_str),
+        ErrorKind::EmptyPasswordDict=>format!("The password generation dictionary can't be empty{}",source_error_str),
+        ErrorKind::PasswordLengthZero=>format!("The password length can't be 0{}",source_error_str),
     };
     eprintln!("{}", error_style.paint(err));
 }

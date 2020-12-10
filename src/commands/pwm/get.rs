@@ -1,15 +1,8 @@
 use crate::{
     input::prompt_user_to_unlock_file_with_password,
-    locker::{
-        encrypt::{EncryptedFile, LockedEncryptedFile},
-        errors::Result,
-        flags::MutableFile,
-    },
-    passwords::{
-        filter::{Filter, PasswordFilter},
-        iterator::PasswordIterator,
-        sort::{Sort, SortBy},
-    },
+    locker::{print_error, EncryptedFile, LockedEncryptedFile, MutableFile, Result},
+    passwords::{Filter, PasswordFilter, PasswordIterator, Sort, SortBy},
+    styles::error_style,
 };
 
 use super::{
@@ -22,7 +15,7 @@ pub fn get_passwords_from_unlocked_file(
     sort_by: Option<SortBy>,
     printing_mode: PrintingMode,
 ) -> Result<()> {
-    let passwords = PasswordIterator::new(file)?;
+    let passwords = PasswordIterator::new(file);
     match (filter.is_redundant(), sort_by) {
         (true, None) => print_passwords(passwords, printing_mode)?,
         (true, Some(s)) => print_sorted_passwords(passwords.sort(s)?, printing_mode),
@@ -33,15 +26,13 @@ pub fn get_passwords_from_unlocked_file(
     };
     Ok(())
 }
-pub fn get(
-    filter: PasswordFilter,
-    sort_by: Option<SortBy>,
-    printing_mode: PrintingMode,
-) -> Result<()> {
+fn get(filter: PasswordFilter, sort_by: Option<SortBy>, printing_mode: PrintingMode) -> Result<()> {
     let path = get_passwords_file_path()?;
     let mut unlocked_file = if path.exists() {
-        let file = LockedEncryptedFile::open_readonly(path)?;
-        prompt_user_to_unlock_file_with_password(file, "Enter master password: ")?
+        prompt_user_to_unlock_file_with_password(
+            LockedEncryptedFile::open_readonly(path)?,
+            "Enter master password: ",
+        )?
     } else {
         create_passwords_file_dialog(&path)?;
         return Ok(());
@@ -52,5 +43,11 @@ pub fn get(
             unlocked_file.make_immutable()?;
             Err(err)
         }
+    }
+}
+
+pub fn get_command(filter: PasswordFilter, sort_by: Option<SortBy>, printing_mode: PrintingMode) {
+    if let Err(error) = get(filter, sort_by, printing_mode) {
+        print_error(error, "passwords", &error_style());
     }
 }

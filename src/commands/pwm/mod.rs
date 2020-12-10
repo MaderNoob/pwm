@@ -1,23 +1,16 @@
-pub mod get;
+mod get;
+mod new;
 pub mod master_password;
 pub mod printing;
-use printing::*;
 
-use crate::{input::prompt_user_to_create_master_password, input::prompt_user_to_unlock_file_with_password, locker::{encrypt::{EncryptedFile, EncryptedFileWriter}, io::Write}, passwords::iterator::PasswordIterator, styles::{success_style, warning_style}};
+pub use {get::get_command,new::new_command};
+
 use crate::{
-    locker::{
-        encrypt::{inner_files::InnerEncryptedFile, LockedEncryptedFile},
-        errors::{ErrorKind, Result},
-        flags::MutableFile,
-    },
-    passwords::{
-        filter::{Filter, PasswordFilter},
-        io::PasswordWriter,
-        sort::{Sort, SortBy, SortedPasswords},
-        Password,
-    },
+    input::prompt_user_to_create_master_password,
+    locker::{EncryptedFile, ErrorKind, Result, EncryptedFlush},
+    passwords::PasswordWriter,
+    styles::{success_style, warning_style},
 };
-use fallible_iterator::FallibleIterator;
 use std::path::{Path, PathBuf};
 
 fn get_passwords_file_path() -> Result<PathBuf> {
@@ -38,7 +31,7 @@ pub fn create_passwords_file_dialog(path: &Path) -> Result<EncryptedFile> {
     let mut file = EncryptedFile::create(path, &master_password)?;
     {
         let mut writer = file.writer();
-        writer.write_passwords(&[])?;
+        writer.write_passwords(&[]);
         writer.flush()?;
         println!(
             "{}",

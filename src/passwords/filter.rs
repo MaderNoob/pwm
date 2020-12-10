@@ -1,4 +1,4 @@
-use crate::locker::errors::{Error, Result};
+use crate::locker::{Error, Result};
 use crate::passwords::{iterator::PasswordIterator, Password};
 use fallible_iterator::FallibleIterator;
 use std::collections::HashMap;
@@ -7,7 +7,6 @@ pub struct PasswordFilter {
     password_filter: Option<String>,
     domain_filter: Option<String>,
     username_filter: Option<String>,
-    email_filter: Option<Option<String>>,
     additional_filters: HashMap<String, String>,
 }
 impl PasswordFilter {
@@ -15,14 +14,12 @@ impl PasswordFilter {
         password_filter: Option<String>,
         domain_filter: Option<String>,
         username_filter: Option<String>,
-        email_filter: Option<Option<String>>,
         additional_filters: HashMap<String, String>,
     ) -> PasswordFilter {
         PasswordFilter {
             password_filter,
             domain_filter,
             username_filter,
-            email_filter,
             additional_filters,
         }
     }
@@ -41,23 +38,6 @@ impl PasswordFilter {
             if !password.username.contains(&uf[..]) {
                 return false;
             }
-        }
-        match &self.email_filter {
-            Some(Some(ef))=>{
-                match &password.email {
-                    Some(email) => {
-                        if !email.contains(&ef[..]) {
-                            return false;
-                        }
-                    }
-                    None => return false,
-                }
-            },
-            Some(None)=>if password.email.is_some(){
-                return false;
-            }
-            _=>{},
-            
         }
         for (filter_key, filter) in &self.additional_filters {
             match password.additional_fields.get(filter_key) {
@@ -82,7 +62,6 @@ impl PasswordFilter {
         self.password_filter.is_none()
             && self.domain_filter.is_none()
             && self.username_filter.is_none()
-            && self.email_filter.is_none()
             && self.additional_filters.is_empty()
     }
 }

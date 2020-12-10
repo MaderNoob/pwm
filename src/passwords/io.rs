@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::locker::errors::{to_locker_error, ErrorKind, Result};
+use crate::locker::{
+    to_locker_error, EncryptedFile, ErrorKind, Result, EncryptedWrite, ENCRYPTION_HEADERS_SIZE,
+};
 
 use crate::passwords::Password;
 pub trait PasswordReader {
@@ -10,7 +12,7 @@ pub trait PasswordReader {
     fn read_additional_fields(&mut self) -> Result<HashMap<String, String>>;
     fn read_password(&mut self) -> Result<Password>;
 }
-impl<T:crate::locker::io::Read> PasswordReader for T {
+impl<T: crate::locker::EncryptedRead> PasswordReader for T {
     fn read_usize(&mut self) -> Result<usize> {
         let mut usize_buf = [0u8; std::mem::size_of::<usize>()];
         self.read_exact(&mut usize_buf)?;
@@ -47,58 +49,46 @@ impl<T:crate::locker::io::Read> PasswordReader for T {
             password: self.read_string()?,
             domain: self.read_string()?,
             username: self.read_string()?,
-            email: self.read_optional_string()?,
             additional_fields: self.read_additional_fields()?,
         })
     }
 }
 
 pub trait PasswordWriter {
-    fn write_usize(&mut self, usize_value: usize) -> Result<&mut Self>;
-    fn write_string(&mut self, string: &str) -> Result<&mut Self>;
-    fn write_optional_string(&mut self, optional_string: &Option<String>) -> Result<&mut Self>;
-    fn write_additional_fields(
-        &mut self,
-        additional_fields: &HashMap<String, String>,
-    ) -> Result<&mut Self>;
-    fn write_password(&mut self, password: &Password) -> Result<&mut Self>;
-    fn write_passwords(&mut self,passwords:&[Password])->Result<&mut Self>;
+    fn write_usize(&mut self, usize_value: usize) -> &mut Self;
+    fn write_string(&mut self, string: &str) -> &mut Self;
+    fn write_additional_fields(&mut self, additional_fields: &HashMap<String, String>)
+        -> &mut Self;
+    fn write_password(&mut self, password: &Password) -> &mut Self;
+    fn write_passwords(&mut self, passwords: &[Password]) -> &mut Self;
 }
-impl<T: crate::locker::io::Write> PasswordWriter for T {
-    fn write_usize(&mut self, usize_value: usize) -> Result<&mut Self> {
+impl<T: EncryptedWrite> PasswordWriter for T {
+    fn write_usize(&mut self, usize_value: usize) -> &mut Self {
         self.write_all(&usize_value.to_ne_bytes())
     }
-    fn write_string(&mut self, string: &str) -> Result<&mut Self> {
-        self.write_all(string.as_bytes())?.write(0)
-    }
-    fn write_optional_string(&mut self, optional_string: &Option<String>) -> Result<&mut Self> {
-        match optional_string {
-            Some(string) => self.write_string(string),
-            None => Ok(self),
-        }
+    fn write_string(&mut self, string: &str) -> &mut Self {
+        self.write_all(string.as_bytes()).write(0)
     }
     fn write_additional_fields(
         &mut self,
         additional_fields: &HashMap<String, String>,
-    ) -> Result<&mut Self> {
-        self.write_usize(additional_fields.len())?;
+    ) -> &mut Self {
+        self.write_usize(additional_fields.len());
         for (key, value) in additional_fields {
-            self.write_string(key)?.write_string(value)?;
+            self.write_string(key).write_string(value);
         }
-        Ok(self)
+        self
     }
-    fn write_password(&mut self, password: &Password) -> Result<&mut Self> {
-        self.write_string(&password.password)?
-            .write_string(&password.domain)?
-            .write_string(&password.username)?
-            .write_optional_string(&password.email)?
+    fn write_password(&mut self, password: &Password) -> &mut Self {
+        self.write_string(&password.password)
+            .write_string(&password.domain)
+            .write_string(&password.username)
             .write_additional_fields(&password.additional_fields)
     }
-    fn write_passwords(&mut self,passwords:&[Password])->Result<&mut Self>{
-        self.write_usize(passwords.len())?;
-        for password in passwords{
-            self.write_password(password)?;
+    fn write_passwords(&mut self, passwords: &[Password]) -> &mut Self {
+        for password in passwords {
+            self.write_password(password);
         }
-        Ok(self)
+        self
     }
 }
